@@ -46,7 +46,7 @@ class TrajectoryNode(Node):
 'elbow_pitch_joint', 'elbow_yaw_joint', 'wrist_pitch_joint', 'wrist_roll_joint']
 
         # Set up the kinematic chain object.
-        self.chain = KinematicChain(self, 'world', 'virtual_endeffector', self.jointnames)
+        self.chain = KinematicChain(self, 'world', 'tip', self.jointnames)
 
         # Define the matching initial joint/task positions.
         # 7 values for the 7 active DOFs (fixed joints don't need values)
@@ -71,7 +71,10 @@ class TrajectoryNode(Node):
         
         # Ball physics setup
         self.ball_radius = 0.03
-        self.ball_p = np.array([0.20, 0.20, self.ball_radius+0.2])
+        x_bias = 0.1*(np.random.rand()-0.5)
+        y_bias = 0.1*(np.random.rand()-0.5)
+        z_bias = 0.1*(np.random.rand()-0.5)
+        self.ball_p = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
         self.ball_v = np.array([0.0, 0.0, 0.0])
         self.ball_a = np.array([0.0, 0.0, 0.0])
         self.ball_p0 = self.ball_p.copy()
@@ -96,6 +99,11 @@ class TrajectoryNode(Node):
         self.mode = "track"  # modes: "track", "swing", "return"
         self.hit= False
         self.p_start = self.p0.copy()  # Starting position for current trajectory
+
+        # secondary task information
+        self.q_center = np.radians(np.array([120.0, 80.0, -40.0,  10.0,  70.0, 70.0, -80.0])) # comfortable position when hitting, from one looking-good trial
+        # self.q_center = self.q0 # just return to starting position
+        self.lambda2 = 0.0  # secondary task gain
 
         ##############################################################
         # Setup the logistics of the node:
@@ -134,7 +142,7 @@ class TrajectoryNode(Node):
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
         # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        return self.ball_p0, 2.0, -self.ball_v0
+        return self.ball_p0, 6.0, -self.ball_v0
 
 
     # Update - send a new joint command every time step.
@@ -167,7 +175,7 @@ class TrajectoryNode(Node):
         t_rel = self.t % time_to_contact
         
         # desired orientation (fixed for now)
-        Rd = Rotz(0) @ Rotx(-np.pi/2)
+        Rd = Rotz(0) # @ Rotx(-np.pi/2)
         wd = vzero()
 
         # Generate trajectory
@@ -183,14 +191,20 @@ class TrajectoryNode(Node):
             wr = wd + self.lam * eRlast
 
             # Compute the inverse kinematics.
-            J     = np.vstack((Jv, Jw))
-            xrdot = np.concatenate((vr, wr))
+            # J     = np.vstack((Jv, Jw))
+            # xrdot = np.concatenate((vr, wr))
+            # Jacobian for 4 DOF control (position + x-axis orientation)
+            J     = np.vstack((Jv, Jw[2,:]))
+            xrdot = np.concatenate((vr, wr[2:3]))
             
             # FOR THE REPORT: MAY NEED TO DO STUDY ON CORRECT GAMMA
             Jdinv = J.T @ np.linalg.inv(J @ J.T + self.gamma**2 * np.eye(np.size(J, 0)))
-            qcdot = Jdinv @ xrdot
+            qcdot_primary = Jdinv @ xrdot
+            # secondary task to move towards comfortable center position
+            qcdot_secondary = -self.lambda2 * (qclast - self.q_center)
+            qcdot = qcdot_primary + (np.eye(len(self.jointnames)) - Jdinv @ J) @ qcdot_secondary
             self.qcdot = qcdot
-            
+
             # Integrate the joint position.
             qc = qclast + self.dt * qcdot
 
@@ -223,6 +237,7 @@ class TrajectoryNode(Node):
                     f"Ball velocity: [{self.ball_v[0]:.3f}, {self.ball_v[1]:.3f}, {self.ball_v[2]:.3f}]"
                 )
                 self.hit = True
+                self.get_logger().info(f"Joint positions at hit: {np.degrees(self.qc)}")
                 
         else: # after contact (slow down joints and return to starting position)
             
