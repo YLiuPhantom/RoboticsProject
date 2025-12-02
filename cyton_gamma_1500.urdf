@@ -442,6 +442,33 @@
       </visual>
     </link>
 
+  <!--  bat  -->
+
+  <joint name="bat_joint" type="fixed">
+    <parent link="virtual_endeffector"/>
+    <child  link="bat"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>		
+  </joint>
+
+  <link name="bat">			
+    <visual>
+      <origin xyz="0 0.1 0" rpy="1.5708 0 0"/>	<!-- place/orient --> <!-- 0.2m long cylinder -->
+      <geometry>
+	<cylinder length="0.2" radius="0.01"/>	<!-- length along z axis --> <!-- 0.01m radius -->
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Fixed shift to tip -->
+  <joint name="tipshift" type="fixed">
+    <parent link="bat"/>
+    <child  link="tip"/>
+    <origin xyz="0 0.2 0" rpy="0 0 0"/> <!-- shift to bat tip, 0.2m long cylinder -->
+  </joint>
+
+  <link name="tip">			
+  </link>
+
 </robot>
 
 
