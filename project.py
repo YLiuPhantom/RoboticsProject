@@ -103,7 +103,7 @@ class TrajectoryNode(Node):
         # secondary task information
         self.q_center = np.radians(np.array([120.0, 80.0, -40.0,  10.0,  70.0, 70.0, -80.0])) # comfortable position when hitting, from one looking-good trial
         # self.q_center = self.q0 # just return to starting position
-        self.lambda2 = 0.0  # secondary task gain
+        self.lambda2 = 10.0  # secondary task gain
 
         ##############################################################
         # Setup the logistics of the node:
@@ -124,7 +124,7 @@ class TrajectoryNode(Node):
 
         # Set up the timer to update at 100Hz, with (t=0) occuring in
         # the first update cycle (dt) from now.
-        self.dt    = 0.01                       # 100Hz.
+        self.dt    = 0.001                       # 100Hz.
         self.t     = -self.dt                   # Seconds since start
         self.now   = self.get_clock().now()     # ROS time since 1970
         self.timer = self.create_timer(self.dt, self.update)
@@ -142,7 +142,7 @@ class TrajectoryNode(Node):
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
         # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        return self.ball_p0, 6.0, -self.ball_v0
+        return self.ball_p0, 2.0, np.array([0.1,0.1,0.1])
 
 
     # Update - send a new joint command every time step.
@@ -175,8 +175,9 @@ class TrajectoryNode(Node):
         t_rel = self.t % time_to_contact
         
         # desired orientation (fixed for now)
-        Rd = Rotz(0) # @ Rotx(-np.pi/2)
-        wd = vzero()
+        #Rd = Rotz(0) # @ Rotx(-np.pi/2)
+        #wd = vzero()
+        nd = np.array([1.0,1.0,1.0])
 
         # Generate trajectory
         if self.hit==False: # before contact
@@ -184,22 +185,21 @@ class TrajectoryNode(Node):
             # Grab the last joint command position and task errors.
             qclast = self.qc
             eplast = self.ep
-            eRlast = self.eR
 
             # compute errors
             vr = vd + self.lam * eplast
-            wr = wd + self.lam * eRlast
 
-            # Compute the inverse kinematics.
-            # J     = np.vstack((Jv, Jw))
-            # xrdot = np.concatenate((vr, wr))
-            # Jacobian for 4 DOF control (position + x-axis orientation)
-            J     = np.vstack((Jv, Jw[2,:]))
-            xrdot = np.concatenate((vr, wr[2:3]))
+            # add extra task
+            y = Rtip[:,1]
+            J     = np.vstack((Jv, np.cross(y,nd).T @ Jw))
+            extra_task = np.array([-self.lam*nd.T @ y])
+            xrdot = np.concatenate((vr,extra_task))
+            
             
             # FOR THE REPORT: MAY NEED TO DO STUDY ON CORRECT GAMMA
             Jdinv = J.T @ np.linalg.inv(J @ J.T + self.gamma**2 * np.eye(np.size(J, 0)))
             qcdot_primary = Jdinv @ xrdot
+            
             # secondary task to move towards comfortable center position
             qcdot_secondary = -self.lambda2 * (qclast - self.q_center)
             qcdot = qcdot_primary + (np.eye(len(self.jointnames)) - Jdinv @ J) @ qcdot_secondary
@@ -214,13 +214,12 @@ class TrajectoryNode(Node):
             # Save the joint command position and task errors.
             self.qc = qc
             self.ep = ep(pd, pc)
-            self.eR = eR(Rd, Rc)
 
             # Calculate distance between tip and ball center.
             distance_to_ball = np.linalg.norm(pc - self.ball_p)
             
             # Check for collision (tip within ball radius + small tolerance)
-            collision_threshold = self.ball_radius + 0.01  # 1cm tolerance
+            collision_threshold = 0.02
             
             if distance_to_ball < collision_threshold:
                 # Get the tip velocity from joint velocities using Jacobian
@@ -285,16 +284,16 @@ class TrajectoryNode(Node):
             name=self.jointnames,
             position=qc.tolist(),
             velocity=qcdot.tolist()))
-        self.pubpose.publish(PoseStamped(
-            header=header,
-            pose=Pose_from_Rp(Rd,pd)))
-        self.pubtwist.publish(TwistStamped(
-            header=header,
-            twist=Twist_from_vw(vd,wd)))
-        self.tfbroad.sendTransform(TransformStamped(
-            header=header,
-            child_frame_id='desired',
-            transform=Transform_from_Rp(Rd,pd)))
+        #self.pubpose.publish(PoseStamped(
+        #    header=header,
+        #    pose=Pose_from_Rp(Rd,pd)))
+        #self.pubtwist.publish(TwistStamped(
+        #    header=header,
+        #    twist=Twist_from_vw(vd,wd)))
+        #self.tfbroad.sendTransform(TransformStamped(
+        #    header=header,
+        #    child_frame_id='desired',
+        #    transform=Transform_from_Rp(Rd,pd)))
 
 #
 #  Main Code
