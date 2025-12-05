@@ -64,6 +64,7 @@ class TrajectoryNode(Node):
         self.qc_swing_end = vzero()
         self.time_swing_end = 0.0
         self.return_to_start = False
+        self.tcontact = 1.0  # Time to contact for current trajectory
 
         # lambda and gamme
         self.lam = 20
@@ -71,16 +72,18 @@ class TrajectoryNode(Node):
         
         # Ball physics setup
         self.ball_radius = 0.03
-        x_bias = 0.1*(np.random.rand()-0.5)
-        y_bias = 0.1*(np.random.rand()-0.5)
-        z_bias = 0.1*(np.random.rand()-0.5)
-        #self.ball_p = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
-        self.ball_p0 = np.array([0.2, 0.45, self.ball_radius+0.2])
-        self.ball_p = np.array([1.0, 1.0, 1.0])
-        self.ball_v = np.array([-0.8, -0.55, 0.73])
+        x_bias = 0.05*(np.random.rand()-0.5)
+        y_bias = 0.05*(np.random.rand()-0.5)
+        z_bias = 0.05*(np.random.rand()-0.5)
+        self.ball_p0 = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
+        # self.ball_p0 = np.array([0.2, 0.45, self.ball_radius+0.2])
+
         self.ball_a = np.array([0.0, 0.0, -3.0])
-        #self.ball_p0 = self.ball_p.copy()
-        self.ball_v0 = self.ball_v.copy()
+        self.ball_p = np.array([1.0, 1.0, 1.0])
+        # self.ball_v = np.array([-0.8, -0.55, 0.73])
+        self.ball_v = (self.ball_p0 - self.ball_p - 0.5 * self.ball_a * self.tcontact**2) / self.tcontact
+        # self.ball_p0 = self.ball_p.copy()
+        # self.ball_v0 = self.ball_v.copy()
         
         # Ball marker setup
         diam = 2 * self.ball_radius
@@ -101,6 +104,7 @@ class TrajectoryNode(Node):
         self.mode = "track"  # modes: "track", "swing", "return"
         self.hit= False
         self.p_start = self.p0.copy()  # Starting position for current trajectory
+        
 
         # secondary task information
         self.q_center = np.radians(np.array([120.0, 80.0, -40.0,  10.0,  70.0, 70.0, -80.0])) # comfortable position when hitting, from one looking-good trial
@@ -144,7 +148,7 @@ class TrajectoryNode(Node):
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
         # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        tcontact = 1.0
+        tcontact = self.tcontact
         vbat_des = -self.ball_v
         return self.ball_p0, tcontact, vbat_des
 
