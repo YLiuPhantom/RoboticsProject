@@ -50,7 +50,7 @@ class TrajectoryNode(Node):
 
         # Define the matching initial joint/task positions.
         # 7 values for the 7 active DOFs (fixed joints don't need values)
-        self.q0 = np.radians(np.array([180.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+        self.q0 = np.radians(np.array([270.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
         (self.p0, self.R0, _, _) = self.chain.fkin(self.q0)
         self.p = self.p0.copy()
 
@@ -74,10 +74,12 @@ class TrajectoryNode(Node):
         x_bias = 0.1*(np.random.rand()-0.5)
         y_bias = 0.1*(np.random.rand()-0.5)
         z_bias = 0.1*(np.random.rand()-0.5)
-        self.ball_p = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
-        self.ball_v = np.array([0.0, 0.0, 0.0])
-        self.ball_a = np.array([0.0, 0.0, 0.0])
-        self.ball_p0 = self.ball_p.copy()
+        #self.ball_p = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
+        self.ball_p0 = np.array([0.2, 0.45, self.ball_radius+0.2])
+        self.ball_p = np.array([1.0, 1.0, 1.0])
+        self.ball_v = np.array([-0.8, -0.55, 0.73])
+        self.ball_a = np.array([0.0, 0.0, -3.0])
+        #self.ball_p0 = self.ball_p.copy()
         self.ball_v0 = self.ball_v.copy()
         
         # Ball marker setup
@@ -142,7 +144,9 @@ class TrajectoryNode(Node):
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
         # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        return self.ball_p0, 2.0, np.array([0.1,0.1,0.1])
+        tcontact = 1.0
+        vbat_des = -self.ball_v
+        return self.ball_p0, tcontact, vbat_des
 
 
     # Update - send a new joint command every time step.
@@ -177,7 +181,7 @@ class TrajectoryNode(Node):
         # desired orientation (fixed for now)
         #Rd = Rotz(0) # @ Rotx(-np.pi/2)
         #wd = vzero()
-        nd = np.array([1.0,1.0,1.0])
+        nd = desired_tip_velocity/np.linalg.norm(desired_tip_velocity)
 
         # Generate trajectory
         if self.hit==False: # before contact
