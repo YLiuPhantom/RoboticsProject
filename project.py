@@ -64,7 +64,6 @@ class TrajectoryNode(Node):
         self.qc_swing_end = vzero()
         self.time_swing_end = 0.0
         self.return_to_start = False
-        #self.tcontact = 1.0  # Time to contact for current trajectory
 
         # lambda and gamme
         self.lam = 20
@@ -102,7 +101,6 @@ class TrajectoryNode(Node):
         self.ball_marker.pose.orientation = Quaternion()
         self.ball_marker.pose.position = Point_from_p(self.ball_p)
         self.ball_marker.scale = Vector3(x=diam, y=diam, z=diam)
-        #self.ball_marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.8)
         self.markerarray = MarkerArray(markers=[self.ball_marker])
         
         # State machine for hitting behavior
@@ -147,30 +145,9 @@ class TrajectoryNode(Node):
         self.timer.destroy()
         self.destroy_node()
         
-        
     # function to estimate contact position (start simple, then expand to output desired contact metrics)
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
-        # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        #tcontact = self.tcontact
-        vbat_des = -self.ball_v
-        # change of basis
-        b1_un = self.ball_p0-self.ball_p_start
-        b1 = b1_un/np.linalg.norm(b1_un)
-        b3 = np.array([0.0,0.0,1.0])
-        b2 = np.cross(b1,b3)
-        b2 = b2/np.linalg.norm(b2)
-        P = np.column_stack([b1,b2,b3])
-        P_inv = np.linalg.inv(P)
-        v0_prime = P_inv@self.ball_v0
-        g = self.ball_a[2] # gravity
-        #t = (-v0_prime[2]+np.sqrt(v0_prime[2]**2-2*g*np.linalg.norm(b1_un)))/(-g)
-        if g>0:
-            t = (-v0_prime[2]-np.sqrt(v0_prime[2]**2))/(g)
-        else:
-            # fastball
-            t = np.linalg.norm(b1_un)/np.linalg.norm(v0_prime)
-        #print(t)
         return self.ball_p0, self.tcontact, np.array([1.0,1.0,1.0])#vbat_des
 
 
