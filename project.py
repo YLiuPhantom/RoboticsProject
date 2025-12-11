@@ -64,30 +64,35 @@ class TrajectoryNode(Node):
         self.qc_swing_end = vzero()
         self.time_swing_end = 0.0
         self.return_to_start = False
-        self.tcontact = 1.0  # Time to contact for current trajectory
+        #self.tcontact = 1.0  # Time to contact for current trajectory
 
         # lambda and gamme
         self.lam = 20
-        self.gamma = 0.1
+        self.gamma = 0.001
         
         # Ball physics setup
+        self.ball_p = np.array([1.0, 1.0, 1.0])
+        self.ball_p_start = self.ball_p.copy()
         self.ball_radius = 0.03
         x_bias = 0.05*(np.random.rand()-0.5)
         y_bias = 0.05*(np.random.rand()-0.5)
         z_bias = 0.05*(np.random.rand()-0.5)
-        self.ball_p0 = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias])
-        # self.ball_p0 = np.array([0.2, 0.45, self.ball_radius+0.2])
+        self.ball_p0 = np.array([0.20 + x_bias, 0.45 + y_bias, self.ball_radius+0.2 + z_bias]) # desired ball location
 
-        self.ball_a = np.array([0.0, 0.0, -3.0])
-        self.ball_p = np.array([1.0, 1.0, 1.0])
-        # self.ball_v = np.array([-0.8, -0.55, 0.73])
-        self.ball_v = (self.ball_p0 - self.ball_p - 0.5 * self.ball_a * self.tcontact**2) / self.tcontact
-        # self.ball_p0 = self.ball_p.copy()
-        # self.ball_v0 = self.ball_v.copy()
-        
+        self.ball_marker = Marker()
+        pitch_type = np.random.randint(0,2)
+        self.tcontact = np.random.rand()*1.5+0.5 # this controls velocity of the pitch
+        if pitch_type==0: # fastball
+            self.ball_a = np.array([0.0, 0.0, 0.0])
+            self.ball_v0 = (self.ball_p0-self.ball_p)/self.tcontact
+            self.ball_marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.8)
+        elif pitch_type==1: # curveball
+            self.ball_a = np.array([0.0, 0.0, -3.0])
+            self.ball_v0 = (self.ball_p0 - self.ball_p - 0.5 * self.ball_a * self.tcontact**2) / self.tcontact
+            self.ball_marker.color = ColorRGBA(r=0.0, g=0.0, b=1.0, a=0.8)
+        self.ball_v = self.ball_v0.copy()
         # Ball marker setup
         diam = 2 * self.ball_radius
-        self.ball_marker = Marker()
         self.ball_marker.header.frame_id = "world"
         self.ball_marker.header.stamp = self.get_clock().now().to_msg()
         self.ball_marker.action = Marker.ADD
@@ -97,7 +102,7 @@ class TrajectoryNode(Node):
         self.ball_marker.pose.orientation = Quaternion()
         self.ball_marker.pose.position = Point_from_p(self.ball_p)
         self.ball_marker.scale = Vector3(x=diam, y=diam, z=diam)
-        self.ball_marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.8)
+        #self.ball_marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.8)
         self.markerarray = MarkerArray(markers=[self.ball_marker])
         
         # State machine for hitting behavior
@@ -108,7 +113,6 @@ class TrajectoryNode(Node):
 
         # secondary task information
         self.q_center = np.radians(np.array([120.0, 80.0, -40.0,  10.0,  70.0, 70.0, -80.0])) # comfortable position when hitting, from one looking-good trial
-        # self.q_center = self.q0 # just return to starting position
         self.lambda2 = 10.0  # secondary task gain
 
         ##############################################################
@@ -148,9 +152,26 @@ class TrajectoryNode(Node):
     def contact_metrics(self):
         # returns contact position, time to contact, and desired impact velocity
         # TO DO: EXPAND TO INCORPORATE TIMING CODE TO GENERATE CORRECT CONTACT METRICS
-        tcontact = self.tcontact
+        #tcontact = self.tcontact
         vbat_des = -self.ball_v
-        return self.ball_p0, tcontact, vbat_des
+        # change of basis
+        b1_un = self.ball_p0-self.ball_p_start
+        b1 = b1_un/np.linalg.norm(b1_un)
+        b3 = np.array([0.0,0.0,1.0])
+        b2 = np.cross(b1,b3)
+        b2 = b2/np.linalg.norm(b2)
+        P = np.column_stack([b1,b2,b3])
+        P_inv = np.linalg.inv(P)
+        v0_prime = P_inv@self.ball_v0
+        g = self.ball_a[2] # gravity
+        #t = (-v0_prime[2]+np.sqrt(v0_prime[2]**2-2*g*np.linalg.norm(b1_un)))/(-g)
+        if g>0:
+            t = (-v0_prime[2]-np.sqrt(v0_prime[2]**2))/(g)
+        else:
+            # fastball
+            t = np.linalg.norm(b1_un)/np.linalg.norm(v0_prime)
+        #print(t)
+        return self.ball_p0, self.tcontact, np.array([1.0,1.0,1.0])#vbat_des
 
 
     # Update - send a new joint command every time step.
@@ -183,12 +204,10 @@ class TrajectoryNode(Node):
         t_rel = self.t % time_to_contact
         
         # desired orientation (fixed for now)
-        #Rd = Rotz(0) # @ Rotx(-np.pi/2)
-        #wd = vzero()
         nd = desired_tip_velocity/np.linalg.norm(desired_tip_velocity)
 
         # Generate trajectory
-        if self.hit==False: # before contact
+        if self.hit==False and self.ball_p[0]>-1: # before contact
             (pd, vd) = spline(t_rel, time_to_contact, self.p0, p_ball_estimate, vzero(), desired_tip_velocity)
             # Grab the last joint command position and task errors.
             qclast = self.qc
@@ -270,13 +289,15 @@ class TrajectoryNode(Node):
                 self.qc_swing_end = qc
                 self.time_swing_end = self.t
             else: # continue to return to original position
-                time_to_start = 0.5
+                time_to_start = 0.2
                 if np.linalg.norm(self.qc-self.q0)<0.01:
                     # if here we have successfully returned to start position
                     qc = self.qc
                     qcdot = self.qcdot
                     vd = vzero()
                     pd = self.p0
+                    self.future.set_result("Trajectory has ended")
+                    return
                 else:
                     (qc,qcdot) = goto(self.t-self.time_swing_end,self.time_swing_end+time_to_start,self.qc_swing_end,self.q0)
                     self.qc = qc
@@ -292,44 +313,40 @@ class TrajectoryNode(Node):
             name=self.jointnames,
             position=qc.tolist(),
             velocity=qcdot.tolist()))
-        #self.pubpose.publish(PoseStamped(
-        #    header=header,
-        #    pose=Pose_from_Rp(Rd,pd)))
-        #self.pubtwist.publish(TwistStamped(
-        #    header=header,
-        #    twist=Twist_from_vw(vd,wd)))
-        #self.tfbroad.sendTransform(TransformStamped(
-        #    header=header,
-        #    child_frame_id='desired',
-        #    transform=Transform_from_Rp(Rd,pd)))
+        
+        # stop simulation if ball goes behind
+        if self.ball_p[1]<-1:
+            self.future.set_result("Trajectory has ended")
+            return
 
 #
 #  Main Code
 #
 def main(args=None):
-    # Initialize ROS.
-    rclpy.init(args=args)
+    for i in range(50):
+            # Initialize ROS.
+            rclpy.init(args=args)
 
-    # Create a future object to signal when the trajectory ends.
-    future = Future()
+            # Create a future object to signal when the trajectory ends.
+            future = Future()
 
-    # Initialize the trajectory generator node.
-    trajectory = TrajectoryNode('trajectory', future)
+            # Initialize the trajectory generator node.
+            trajectory = TrajectoryNode('trajectory', future)
 
-    # Spin, meaning keep running (taking care of the timer callbacks
-    # and message passing), until interrupted or the trajectory is
-    # complete (as signaled by the future object).
-    rclpy.spin_until_future_complete(trajectory, future)
+            # Spin, meaning keep running (taking care of the timer callbacks
+            # and message passing), until interrupted or the trajectory is
+            # complete (as signaled by the future object).
+            rclpy.spin_until_future_complete(trajectory, future)
 
-    # Report the reason for shutting down.
-    if future.done():
-        trajectory.get_logger().info("Stopping: " + future.result())
-    else:
-        trajectory.get_logger().info("Stopping: Interrupted")
+            # Report the reason for shutting down.
+            if future.done():
+                trajectory.get_logger().info("Stopping: " + future.result())
+            else:
+                trajectory.get_logger().info("Stopping: Interrupted")
 
-    # Shutdown the node and ROS.
-    trajectory.shutdown()
-    rclpy.shutdown()
+            # Shutdown the node and ROS.
+            trajectory.shutdown()
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
