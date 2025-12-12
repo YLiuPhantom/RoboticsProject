@@ -463,7 +463,7 @@
   <joint name="tipshift" type="fixed">
     <parent link="bat"/>
     <child  link="tip"/>
-    <origin xyz="0 0.2 0" rpy="0 0 0"/> <!-- shift to bat tip, 0.2m long cylinder -->
+    <origin xyz="0.007071067812 0.15 0.007071067812" rpy="0 0 0"/> <!-- shift to bat tip, 0.2m long cylinder -->
   </joint>
 
   <link name="tip">			
